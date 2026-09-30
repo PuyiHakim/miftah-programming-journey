@@ -121,7 +121,7 @@
       color: rgba(255,255,255,.025); pointer-events: none;
     }
     .island {
-      position: relative; width: min(900px, 100%); margin: 20px auto 0;
+      position: relative; width: 100%; margin: 20px auto 0;
       padding: 65px 25px; border-radius: 28px;
       background:
         radial-gradient(circle at 50% 35%, rgba(22,185,255,.28), transparent 35%),
@@ -131,6 +131,25 @@
     }
     .island h3 { font-size: clamp(2rem, 5vw, 4rem); font-style: italic; }
     .island p { color: var(--muted); max-width: 580px; margin: 12px auto 25px; }
+    .island-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, .85fr); gap: 20px; align-items: stretch; text-align: center; }
+    .scoreboard { padding: 28px; border: 1px solid rgba(255,255,255,.13); border-radius: 22px; background: rgba(5,12,24,.76); box-shadow: 0 25px 55px rgba(0,0,0,.22); text-align: left; }
+    .scoreboard-kicker { color: var(--yellow); font-size: .72rem; font-weight: 900; letter-spacing: .15em; text-transform: uppercase; }
+    .scoreboard h3 { margin: 5px 0 18px; font-size: 1.8rem; font-style: italic; }
+    .score-form { display: grid; grid-template-columns: 1fr 110px; gap: 10px; }
+    .score-form label { display: block; margin-bottom: 6px; color: var(--muted); font-size: .76rem; font-weight: 800; }
+    .score-form .name-field { grid-column: 1 / -1; }
+    .score-form input { width: 100%; padding: 11px 12px; color: var(--white); border: 1px solid rgba(255,255,255,.2); border-radius: 8px; outline: none; background: rgba(255,255,255,.07); font: inherit; }
+    .score-form input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(22,185,255,.15); }
+    .score-form button { grid-column: 1 / -1; width: 100%; min-width: 0; margin-top: 3px; cursor: pointer; font: inherit; }
+    .reset-scores { width: 100%; margin-top: 10px; padding: 9px 12px; color: var(--muted); border: 1px solid rgba(255,255,255,.18); border-radius: 8px; background: rgba(255,255,255,.04); font: inherit; font-size: .8rem; font-weight: 800; cursor: pointer; transition: .2s; }
+    .reset-scores:hover { color: var(--white); border-color: rgba(255,255,255,.4); background: rgba(255,255,255,.09); }
+    .leaderboard { list-style: none; margin-top: 22px; }
+    .leaderboard li { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-top: 1px solid rgba(255,255,255,.1); }
+    .rank { width: 28px; color: var(--yellow); font-size: .82rem; font-weight: 950; }
+    .player-name { min-width: 0; flex: 1; overflow-wrap: anywhere; font-weight: 800; }
+    .player-score { color: var(--blue); font-weight: 950; white-space: nowrap; }
+    .empty-leaderboard { padding: 12px 0; color: var(--muted); font-size: .9rem; }
+    .score-status { min-height: 1.3em; margin-top: 9px; color: var(--muted); font-size: .78rem; }
     footer { padding: 28px 6vw; display:flex; justify-content:space-between; gap:20px; color:#7f91a8; font-size:.8rem; background:#050b14; }
     @media (max-width: 760px) {
       nav { padding: 18px 5vw; } .nav-links { display:none; }
@@ -138,6 +157,9 @@
       section { padding: 72px 5vw; }
       .card { min-height: 240px; }
       .card h3 { margin-top: 35px; }
+      .island-layout { grid-template-columns: 1fr; }
+      .island { padding: 45px 22px; }
+      .scoreboard { padding: 22px; }
       footer { flex-direction: column; text-align:center; }
     }
   </style>
@@ -199,10 +221,30 @@
           <small>The island is waiting</small>
           <h2>YOUR NEXT DROP.</h2>
         </div>
+        <div class="island-layout">
         <div class="island">
           <h3>READY UP.</h3>
           <p>Gather your squad, choose your landing spot, and create your own story.</p>
           <a class="btn btn-primary" href="#play">Enter the Island</a>
+        </div>
+        <aside class="scoreboard" aria-labelledby="scoreboard-title">
+          <div class="scoreboard-kicker">Squad standings</div>
+          <h3 id="scoreboard-title">LEADERBOARD</h3>
+          <form class="score-form" id="score-form">
+            <div class="name-field">
+              <label for="player-name">Nama pemain</label>
+              <input id="player-name" name="player" type="text" maxlength="24" placeholder="Contoh: Miftah" required>
+            </div>
+            <div>
+              <label for="score-points">Tambah score</label>
+              <input id="score-points" name="score" type="number" min="1" max="999999" value="10" required>
+            </div>
+            <button class="btn btn-primary" type="submit">Tambah Score</button>
+          </form>
+          <p class="score-status" id="score-status" aria-live="polite"></p>
+          <ol class="leaderboard" id="leaderboard" aria-label="Peringkat pemain"></ol>
+          <button class="reset-scores" id="reset-scores" type="button">Reset Leaderboard</button>
+        </aside>
         </div>
       </div>
     </section>
@@ -223,5 +265,75 @@
     <span>© 2026 Miftah Programming Journey</span>
     <span>Fan-made UI concept • Not affiliated with Epic Games</span>
   </footer>
+  <script>
+    (() => {
+      const storageKey = "miftah-island-leaderboard";
+      const form = document.getElementById("score-form");
+      const nameInput = document.getElementById("player-name");
+      const scoreInput = document.getElementById("score-points");
+      const list = document.getElementById("leaderboard");
+      const status = document.getElementById("score-status");
+      const resetButton = document.getElementById("reset-scores");
+      let players = [];
+
+      try {
+        const saved = JSON.parse(localStorage.getItem(storageKey) || "[]");
+        if (Array.isArray(saved)) players = saved.filter(player => player && typeof player.name === "string" && Number.isFinite(player.score));
+      } catch (_) { players = []; }
+
+      function renderLeaderboard() {
+        list.replaceChildren();
+        const ranked = [...players].sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+        if (!ranked.length) {
+          const empty = document.createElement("li");
+          empty.className = "empty-leaderboard";
+          empty.textContent = "Belum ada score. Jadilah pemain pertama!";
+          list.append(empty);
+          return;
+        }
+        ranked.forEach((player, index) => {
+          const row = document.createElement("li");
+          const rank = document.createElement("span");
+          rank.className = "rank";
+          rank.textContent = `#${index + 1}`;
+          const name = document.createElement("span");
+          name.className = "player-name";
+          name.textContent = player.name;
+          const score = document.createElement("span");
+          score.className = "player-score";
+          score.textContent = `${player.score.toLocaleString("id-ID")} pts`;
+          row.append(rank, name, score);
+          list.append(row);
+        });
+      }
+
+      form.addEventListener("submit", event => {
+        event.preventDefault();
+        const name = nameInput.value.trim();
+        const points = Number(scoreInput.value);
+        if (!name || !Number.isInteger(points) || points < 1 || points > 999999) {
+          status.textContent = "Masukkan nama dan score 1–999.999.";
+          return;
+        }
+        const existing = players.find(player => player.name.toLocaleLowerCase() === name.toLocaleLowerCase());
+        if (existing) existing.score += points;
+        else players.push({ name, score: points });
+        try { localStorage.setItem(storageKey, JSON.stringify(players)); } catch (_) {}
+        renderLeaderboard();
+        status.textContent = `+${points.toLocaleString("id-ID")} score untuk ${name}.`;
+        nameInput.value = "";
+        nameInput.focus();
+      });
+
+      resetButton.addEventListener("click", () => {
+        players = [];
+        try { localStorage.removeItem(storageKey); } catch (_) {}
+        renderLeaderboard();
+        status.textContent = "Leaderboard berhasil direset.";
+      });
+
+      renderLeaderboard();
+    })();
+  </script>
 </body>
 </html>
